@@ -646,6 +646,7 @@ dependencies = [
  "maxminddb",
  "once_cell",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

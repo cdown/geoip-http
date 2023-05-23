@@ -8,6 +8,7 @@ use clap::Parser;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
+use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,35 +39,25 @@ struct Config {
 }
 
 #[derive(Serialize)]
-struct TimezoneResponse {
-    tz: Option<String>,
-    ip: String,
-}
-
-#[derive(Serialize)]
 struct TimezoneErrorResponse {
     error: String,
-    ip: String,
+    query: String,
 }
 
-async fn get_tz(
+async fn get_geoip(
     reader: Arc<RwLock<Reader<Mmap>>>,
     ip: IpAddr,
-) -> (
-    StatusCode,
-    Result<Json<TimezoneResponse>, Json<TimezoneErrorResponse>>,
-) {
+) -> (StatusCode, Result<String, Json<TimezoneErrorResponse>>) {
     let reader = reader.read().await;
     match reader.lookup::<maxminddb::geoip2::City>(ip) {
-        Ok(city) => (
-            StatusCode::OK,
-            Ok(Json(TimezoneResponse {
-                tz: city
-                    .location
-                    .and_then(|loc| loc.time_zone.map(str::to_string)),
-                ip: ip.to_string(),
-            })),
-        ),
+        Ok(city) => {
+            // geoip2::City contains values borrowed from reader, so we must render it right away
+            let mut city_json = json!(city);
+            if let Some(obj) = city_json.as_object_mut() {
+                obj.insert("query".into(), ip.to_string().into());
+            }
+            (StatusCode::OK, Ok(city_json.to_string()))
+        }
         Err(err) => {
             let status_code = match err {
                 MaxMindDBError::AddressNotFoundError(_) => StatusCode::NOT_FOUND,
@@ -75,7 +66,7 @@ async fn get_tz(
             (
                 status_code,
                 Err(Json(TimezoneErrorResponse {
-                    ip: ip.to_string(),
+                    query: ip.to_string(),
                     error: err.to_string(),
                 })),
             )
@@ -83,19 +74,19 @@ async fn get_tz(
     }
 }
 
-async fn get_tz_with_client_ip(
+async fn get_geoip_with_client_ip(
     InsecureClientIp(insecure_client_ip): InsecureClientIp,
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
 ) -> impl IntoResponse {
     // We use the insecure one to get X-Forwarded-For, etc
-    get_tz(reader, insecure_client_ip).await
+    get_geoip(reader, insecure_client_ip).await
 }
 
-async fn get_tz_with_explicit_ip(
+async fn get_geoip_with_explicit_ip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
     Path(ip): Path<IpAddr>,
 ) -> impl IntoResponse {
-    get_tz(reader, ip).await
+    get_geoip(reader, ip).await
 }
 
 #[derive(Debug)]
@@ -178,9 +169,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
     let app = Router::new()
-        .route("/", get(get_tz_with_client_ip))
+        .route("/", get(get_geoip_with_client_ip))
         .route("/reload_geoip", get(reload_geoip))
-        .route("/:ip", get(get_tz_with_explicit_ip))
+        .route("/:ip", get(get_geoip_with_explicit_ip))
         .layer(Extension(reader))
         .layer(Extension(cfg.clone()));
     let addr = SocketAddr::from((cfg.ip, cfg.port));
