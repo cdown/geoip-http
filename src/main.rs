@@ -79,24 +79,15 @@ async fn get_tz_with_explicit_ip(
     get_tz(reader, ip)
 }
 
-async fn signal_shutdown() {
-    let ctrl_c = async { signal::ctrl_c().await.unwrap() };
-
+async fn wait_for_shutdown_request() {
     #[cfg(unix)]
-    let unix_sig = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
+    signal::unix::signal(signal::unix::SignalKind::terminate())
+        .expect("failed to install signal handler")
+        .recv()
+        .await;
 
     #[cfg(not(unix))]
-    let unix_sig = std::future::pending::<()>(); // unimplemented elsewhere
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = unix_sig => {},
-    }
+    signal::ctrl_c().await.expect("failed to set up ^C handler")
 }
 
 #[tokio::main]
@@ -112,6 +103,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from((cfg.ip, cfg.port));
     Ok(axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(signal_shutdown())
+        .with_graceful_shutdown(wait_for_shutdown_request())
         .await?)
 }
