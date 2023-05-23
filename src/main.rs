@@ -1,4 +1,5 @@
 use axum::extract::{Extension, Path};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -85,11 +86,14 @@ async fn get_tz_with_explicit_ip(
 async fn reload_geoip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
     Extension(cfg): Extension<Arc<Config>>,
-) -> String {
+) -> (StatusCode, String) {
     static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
 
     if cfg.disable_db_reloading {
-        return "reloading disabled".to_string();
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "reloading disabled".to_string(),
+        );
     }
 
     let now = Instant::now();
@@ -102,12 +106,15 @@ async fn reload_geoip(
                 let mut old_reader = reader.write().await;
                 *old_reader = new_reader;
                 *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
-                "reloaded".to_string()
+                (StatusCode::OK, "reloaded".to_string())
             }
-            Err(err) => err.to_string(),
+            Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
         }
     } else {
-        "too early to reload".to_string()
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "too early to reload".to_string(),
+        )
     }
 }
 
