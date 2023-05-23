@@ -20,8 +20,8 @@ for (for example) 8.8.8.8.
 
 ## Rate limiting
 
-With the performance offered, rate limiting isn't really a major consideration.
-If it becomes necessary in future, it can be added via
+tzserver is designed to be run behind a local reverse proxy, so rate limiting
+generally should happen there. It can also be added via
 [tower-governor](https://github.com/benwis/tower-governor).
 
 ## Performance
