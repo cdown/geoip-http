@@ -1,6 +1,6 @@
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use axum_client_ip::InsecureClientIp;
@@ -98,17 +98,40 @@ async fn get_tz_with_explicit_ip(
     get_tz(reader, ip).await
 }
 
+#[derive(Debug)]
+enum ReloadStatus {
+    Success,
+    ReloadingDisabled,
+    TooEarlyToReload,
+    InternalServerError(String),
+}
+
+impl IntoResponse for ReloadStatus {
+    fn into_response(self) -> Response {
+        let resp = match self {
+            ReloadStatus::Success => (StatusCode::OK, "DB reloaded".to_string()),
+            ReloadStatus::ReloadingDisabled => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "DB reloading disabled at startup".to_string(),
+            ),
+            ReloadStatus::TooEarlyToReload => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too early to reload".to_string(),
+            ),
+            ReloadStatus::InternalServerError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err),
+        };
+        resp.into_response()
+    }
+}
+
 async fn reload_geoip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
     Extension(cfg): Extension<Arc<Config>>,
-) -> (StatusCode, String) {
+) -> ReloadStatus {
     static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
 
     if cfg.disable_db_reloading {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "reloading disabled".to_string(),
-        );
+        return ReloadStatus::ReloadingDisabled;
     }
 
     let now = Instant::now();
@@ -121,15 +144,12 @@ async fn reload_geoip(
                 let mut old_reader = reader.write().await;
                 *old_reader = new_reader;
                 *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
-                (StatusCode::OK, "reloaded".to_string())
+                ReloadStatus::Success
             }
-            Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            Err(err) => ReloadStatus::InternalServerError(err.to_string()),
         }
     } else {
-        (
-            StatusCode::TOO_MANY_REQUESTS,
-            "too early to reload".to_string(),
-        )
+        ReloadStatus::TooEarlyToReload
     }
 }
 
