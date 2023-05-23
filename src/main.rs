@@ -5,7 +5,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
-use maxminddb::{Mmap, Reader};
+use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
 use std::net::{IpAddr, SocketAddr};
@@ -52,19 +52,34 @@ struct TimezoneErrorResponse {
 async fn get_tz(
     reader: Arc<RwLock<Reader<Mmap>>>,
     ip: IpAddr,
-) -> Result<Json<TimezoneResponse>, Json<TimezoneErrorResponse>> {
+) -> (
+    StatusCode,
+    Result<Json<TimezoneResponse>, Json<TimezoneErrorResponse>>,
+) {
     let reader = reader.read().await;
     match reader.lookup::<maxminddb::geoip2::City>(ip) {
-        Ok(city) => Ok(Json(TimezoneResponse {
-            tz: city
-                .location
-                .and_then(|loc| loc.time_zone.map(str::to_string)),
-            ip: ip.to_string(),
-        })),
-        Err(err) => Err(Json(TimezoneErrorResponse {
-            ip: ip.to_string(),
-            error: err.to_string(),
-        })),
+        Ok(city) => (
+            StatusCode::OK,
+            Ok(Json(TimezoneResponse {
+                tz: city
+                    .location
+                    .and_then(|loc| loc.time_zone.map(str::to_string)),
+                ip: ip.to_string(),
+            })),
+        ),
+        Err(err) => {
+            let status_code = match err {
+                MaxMindDBError::AddressNotFoundError(_) => StatusCode::NOT_FOUND,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (
+                status_code,
+                Err(Json(TimezoneErrorResponse {
+                    ip: ip.to_string(),
+                    error: err.to_string(),
+                })),
+            )
+        }
     }
 }
 
