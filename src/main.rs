@@ -41,23 +41,18 @@ fn get_tz(
     reader: Arc<Reader<Vec<u8>>>,
     ip: IpAddr,
 ) -> Result<Json<TimezoneResponse>, Json<TimezoneErrorResponse>> {
-    let city: Result<maxminddb::geoip2::City, _> = reader.lookup(ip);
-    let city = match city {
-        Ok(city) => city,
-        Err(err) => {
-            return Err(Json(TimezoneErrorResponse {
-                ip: ip.to_string(),
-                error: err.to_string(),
-            }))
-        }
-    };
-    Ok(Json(TimezoneResponse {
-        tz: city
-            .location
-            .as_ref()
-            .and_then(|loc| loc.time_zone.map(str::to_string)),
-        ip: ip.to_string(),
-    }))
+    match reader.lookup::<maxminddb::geoip2::City>(ip) {
+        Ok(city) => Ok(Json(TimezoneResponse {
+            tz: city
+                .location
+                .and_then(|loc| loc.time_zone.map(str::to_string)),
+            ip: ip.to_string(),
+        })),
+        Err(err) => Err(Json(TimezoneErrorResponse {
+            ip: ip.to_string(),
+            error: err.to_string(),
+        })),
+    }
 }
 
 async fn get_tz_with_client_ip(
