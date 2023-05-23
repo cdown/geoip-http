@@ -28,12 +28,12 @@ If it becomes necessary in future, it can be added via
 
 On my T14s Gen 2:
 
-    % wrk -t"$(nproc)" -c 400 -d30s http://127.0.0.1:3000/8.8.8.8
+    % wrk -t"$(nproc)" -c400 -d30s http://127.0.0.1:3000/8.8.8.8
     Running 30s test @ http://127.0.0.1:3000/8.8.8.8
       8 threads and 400 connections
       Thread Stats   Avg      Stdev     Max   +/- Stdev
-        Latency     1.51ms    1.32ms  32.44ms   85.73%
-        Req/Sec    37.51k    10.13k   63.36k    67.73%
-      8962612 requests in 30.07s, 1.26GB read
-    Requests/sec: 298093.53
-    Transfer/sec:     42.93MB
+        Latency     1.28ms    1.11ms  29.11ms   87.45%
+        Req/Sec    42.99k    10.07k  158.55k    75.56%
+      10269395 requests in 30.09s, 1.44GB read
+    Requests/sec: 341246.16
+    Transfer/sec:     49.14MB
