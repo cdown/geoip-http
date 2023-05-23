@@ -46,6 +46,9 @@ Fill in `ssl_certificate` and `ssl_certificate_key`.
 
 ```
 http {
+    limit_conn_zone $binary_remote_addr zone=geoip_conn_limit:2m;
+    limit_req_zone $binary_remote_addr zone=geoip_rate_limit:2m rate=5r/m;
+
     upstream geoip-backend {
         server 127.0.0.1:3000;
         keepalive 16;
@@ -56,6 +59,9 @@ http {
         listen [::]:80;
         server_name geoip.chrisdown.name;
 
+        client_body_timeout 2s;
+        client_header_timeout 2s;
+
         return 301 https://$host$request_uri;
     }
 
@@ -64,10 +70,15 @@ http {
         listen [::]:443 ssl;
         server_name geoip.chrisdown.name;
 
+        client_body_timeout 2s;
+        client_header_timeout 2s;
+
         ssl_certificate ...;
         ssl_certificate_key ...;
 
         location / {
+            limit_req zone=geoip_rate_limit;
+            limit_conn addr 5;
             proxy_pass http://geoip-backend;
         }
     }
