@@ -644,6 +644,7 @@ dependencies = [
  "axum-client-ip",
  "clap",
  "maxminddb",
+ "once_cell",
  "serde",
  "tokio",
 ]
