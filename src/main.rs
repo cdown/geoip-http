@@ -1,8 +1,9 @@
+use axum::error_handling::HandleErrorLayer;
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{BoxError, Json, Router};
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
@@ -13,6 +14,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
+use tower::ServiceBuilder;
+use tower_governor::{errors::display_error, governor::GovernorConfigBuilder, GovernorLayer};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -35,6 +38,14 @@ struct Config {
     /// Disable DB reloading at runtime
     #[arg(long)]
     disable_db_reloading: bool,
+
+    /// Period for per-IP ratelimiting
+    #[arg(long, default_value = "60")]
+    ratelimit_period_secs: u64,
+
+    /// Maximum number of requests in --ratelimit-period-secs
+    #[arg(long, default_value = "5")]
+    ratelimit_burst: u32,
 }
 
 #[derive(Serialize)]
@@ -177,10 +188,26 @@ async fn wait_for_shutdown_request() {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
+    let governor_conf = Box::new(
+        GovernorConfigBuilder::default()
+            .per_second(cfg.ratelimit_period_secs)
+            .burst_size(cfg.ratelimit_burst)
+            .finish()
+            .unwrap(),
+    );
     let app = Router::new()
         .route("/", get(get_tz_with_client_ip))
         .route("/reload_geoip", get(reload_geoip))
         .route("/:ip", get(get_tz_with_explicit_ip))
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(|e: BoxError| async move {
+                    display_error(e)
+                }))
+                .layer(GovernorLayer {
+                    config: Box::leak(governor_conf),
+                }),
+        )
         .layer(Extension(reader))
         .layer(Extension(cfg.clone()));
     let addr = SocketAddr::from((cfg.ip, cfg.port));

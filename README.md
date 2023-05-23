@@ -18,12 +18,6 @@ You can then query `/` to get data for the connecting IP (respecting things
 like X-Real-IP, X-Forwarded-For, and the like), or `/8.8.8.8` to get details
 for (for example) 8.8.8.8.
 
-## Rate limiting
-
-With the performance offered, rate limiting isn't really a major consideration.
-If it becomes necessary in future, it can be added via
-[tower-governor](https://github.com/benwis/tower-governor).
-
 ## Performance
 
 On my T14s Gen 2:
