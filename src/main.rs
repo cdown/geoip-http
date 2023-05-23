@@ -39,6 +39,10 @@ struct Config {
     #[arg(long)]
     disable_db_reloading: bool,
 
+    /// Enable per-IP ratelimiting
+    #[arg(short, long)]
+    ratelimit: bool,
+
     /// Period for per-IP ratelimiting
     #[arg(long, default_value = "60")]
     ratelimit_period_secs: u64,
@@ -188,28 +192,31 @@ async fn wait_for_shutdown_request() {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
-    let governor_conf = Box::new(
-        GovernorConfigBuilder::default()
-            .per_second(cfg.ratelimit_period_secs)
-            .burst_size(cfg.ratelimit_burst)
-            .finish()
-            .unwrap(),
-    );
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/", get(get_tz_with_client_ip))
         .route("/reload_geoip", get(reload_geoip))
         .route("/:ip", get(get_tz_with_explicit_ip))
-        .layer(
+        .layer(Extension(reader))
+        .layer(Extension(cfg.clone()));
+
+    if cfg.ratelimit {
+        app = app.layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(|e: BoxError| async move {
                     display_error(e)
                 }))
                 .layer(GovernorLayer {
-                    config: Box::leak(governor_conf),
+                    config: Box::leak(Box::new(
+                        GovernorConfigBuilder::default()
+                            .per_second(cfg.ratelimit_period_secs)
+                            .burst_size(cfg.ratelimit_burst)
+                            .finish()
+                            .unwrap(),
+                    )),
                 }),
-        )
-        .layer(Extension(reader))
-        .layer(Extension(cfg.clone()));
+        );
+    }
+
     let addr = SocketAddr::from((cfg.ip, cfg.port));
     Ok(axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
