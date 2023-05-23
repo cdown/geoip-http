@@ -14,6 +14,10 @@ By default, the server runs on TCP 0.0.0.0:3000. You can change this with the
 `--ip` and `--port` options. You can also set the GeoIP database file location
 with the `--db` option.
 
+You can then query `/` to get data for the connecting IP (respecting things
+like X-Real-IP, X-Forwarded-For, and the like), or `/8.8.8.8` to get details
+for (for example) 8.8.8.8.
+
 ## Rate limiting
 
 With the performance offered, rate limiting isn't really a major consideration.
