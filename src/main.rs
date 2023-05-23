@@ -110,9 +110,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(Extension(reader));
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
-    axum::Server::bind(&addr)
+    Ok(axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(signal_shutdown())
-        .await?;
-    unreachable!()
+        .await?)
 }
