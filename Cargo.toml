@@ -1,0 +1,12 @@
+[package]
+name = "tzserver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.6.18", default-features = false }
+axum-client-ip = "0.4.1"
+clap = { version = "4.3.0", default-features = false, features = ["std", "derive", "help"] }
+maxminddb = "0.23.0"
+serde = { version = "1.0.163", default-features = false }
+tokio = { version = "1.28.1", features = ["rt-multi-thread", "macros", "signal"], default-features = false }
