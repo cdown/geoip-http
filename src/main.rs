@@ -109,16 +109,16 @@ enum ReloadStatus {
 impl IntoResponse for ReloadStatus {
     fn into_response(self) -> Response {
         let resp = match self {
-            ReloadStatus::Success => (StatusCode::OK, "DB reloaded".to_string()),
-            ReloadStatus::ReloadingDisabled => (
+            Self::Success => (StatusCode::OK, "DB reloaded".to_string()),
+            Self::ReloadingDisabled => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "DB reloading disabled at startup".to_string(),
             ),
-            ReloadStatus::TooEarlyToReload => (
+            Self::TooEarlyToReload => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "Too early to reload".to_string(),
             ),
-            ReloadStatus::InternalServerError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err),
+            Self::InternalServerError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err),
         };
         resp.into_response()
     }
