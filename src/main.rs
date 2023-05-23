@@ -5,11 +5,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{BoxError, Json, Router};
 use axum_client_ip::InsecureClientIp;
+use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
@@ -50,6 +52,18 @@ struct Config {
     /// Maximum number of requests in --ratelimit-period-secs
     #[arg(long, default_value = "5")]
     ratelimit_burst: u32,
+
+    /// Whether to use TLS
+    #[arg(long, requires("tls_certificate"), requires("tls_key"))]
+    tls: bool,
+
+    /// A path to a PEM certificate
+    #[arg(long, requires("tls"))]
+    tls_certificate: PathBuf,
+
+    /// A path to a PEM key
+    #[arg(long, requires("tls"))]
+    tls_key: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -218,8 +232,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
-    Ok(axum::Server::bind(&addr)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(wait_for_shutdown_request())
-        .await?)
+
+    if cfg.tls {
+        let tls_cfg = RustlsConfig::from_pem_file(&cfg.tls_certificate, &cfg.tls_key).await?;
+        axum_server_dual_protocol::bind_dual_protocol(addr, tls_cfg)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .with_graceful_shutdown(wait_for_shutdown_request())
+            .await?;
+    }
+    Ok(())
 }
