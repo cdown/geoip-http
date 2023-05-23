@@ -1,17 +1,13 @@
-use axum::{
-    extract::{Extension, Path},
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
+use axum::extract::{Extension, Path};
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Json, Router};
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
 use maxminddb::Reader;
 use serde::Serialize;
-use std::{
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use tokio::signal;
 
 #[derive(Parser, Debug)]
@@ -85,7 +81,6 @@ async fn wait_for_shutdown_request() {
         .expect("failed to install signal handler")
         .recv()
         .await;
-
     #[cfg(not(unix))]
     signal::ctrl_c().await.expect("failed to set up ^C handler")
 }
@@ -93,13 +88,11 @@ async fn wait_for_shutdown_request() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Config::parse();
-
     let reader = Arc::new(Reader::open_readfile(cfg.db)?);
     let app = Router::new()
         .route("/", get(get_tz_with_client_ip))
         .route("/:ip", get(get_tz_with_explicit_ip))
         .layer(Extension(reader));
-
     let addr = SocketAddr::from((cfg.ip, cfg.port));
     Ok(axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
