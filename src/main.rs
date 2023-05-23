@@ -154,13 +154,23 @@ async fn reload_geoip(
 }
 
 async fn wait_for_shutdown_request() {
+    let ctrl_c = async { signal::ctrl_c().await.unwrap() };
+
     #[cfg(unix)]
-    signal::unix::signal(signal::unix::SignalKind::terminate())
-        .expect("failed to install signal handler")
-        .recv()
-        .await;
+    let sigterm = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
     #[cfg(not(unix))]
-    signal::ctrl_c().await.expect("failed to set up ^C handler")
+    let sigterm = std::future::pending::<()>(); // unimplemented elsewhere
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = sigterm => {},
+    }
 }
 
 #[tokio::main]
