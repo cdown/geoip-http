@@ -37,3 +37,50 @@ On my T14s Gen 2:
       10269395 requests in 30.09s, 1.44GB read
     Requests/sec: 341246.16
     Transfer/sec:     49.14MB
+
+## Example server config
+
+### Nginx proxy config
+
+Fill in `ssl_certificate` and `ssl_certificate_key`.
+
+```
+http {
+    upstream geoip-backend {
+        server 127.0.0.1:3000;
+        keepalive 16;
+    }
+
+    server {
+        listen 80;
+        listen [::]:80;
+        server_name geoip.chrisdown.name;
+
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        listen [::]:443 ssl;
+        server_name geoip.chrisdown.name;
+
+        ssl_certificate ...;
+        ssl_certificate_key ...;
+
+        location / {
+            proxy_pass http://geoip-backend;
+        }
+    }
+}
+```
+
+### Systemd unit for tzserver
+
+Fill in `--db`.
+
+```
+[Service]
+ExecStart=/usr/bin/tzserver --db ...
+ExecReload=/usr/bin/curl -v http://127.0.0.1:3000/reload_geoip
+Restart=always
+```
