@@ -4,7 +4,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
-use maxminddb::Reader;
+use maxminddb::{Mmap, Reader};
 use serde::Serialize;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -38,7 +38,7 @@ struct TimezoneErrorResponse {
 }
 
 fn get_tz(
-    reader: Arc<Reader<Vec<u8>>>,
+    reader: Arc<Reader<Mmap>>,
     ip: IpAddr,
 ) -> Result<Json<TimezoneResponse>, Json<TimezoneErrorResponse>> {
     match reader.lookup::<maxminddb::geoip2::City>(ip) {
@@ -57,14 +57,14 @@ fn get_tz(
 
 async fn get_tz_with_client_ip(
     InsecureClientIp(insecure_client_ip): InsecureClientIp,
-    Extension(reader): Extension<Arc<Reader<Vec<u8>>>>,
+    Extension(reader): Extension<Arc<Reader<Mmap>>>,
 ) -> impl IntoResponse {
     // We use the insecure one to get X-Forwarded-For, etc
     get_tz(reader, insecure_client_ip)
 }
 
 async fn get_tz_with_explicit_ip(
-    Extension(reader): Extension<Arc<Reader<Vec<u8>>>>,
+    Extension(reader): Extension<Arc<Reader<Mmap>>>,
     Path(ip): Path<IpAddr>,
 ) -> impl IntoResponse {
     get_tz(reader, ip)
@@ -83,7 +83,7 @@ async fn wait_for_shutdown_request() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Config::parse();
-    let reader = Arc::new(Reader::open_readfile(cfg.db)?);
+    let reader = Arc::new(Reader::open_mmap(cfg.db)?);
     let app = Router::new()
         .route("/", get(get_tz_with_client_ip))
         .route("/:ip", get(get_tz_with_explicit_ip))
