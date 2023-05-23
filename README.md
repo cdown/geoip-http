@@ -1,6 +1,6 @@
-# tzserver
+# tzserver | [![Tests](https://img.shields.io/github/actions/workflow/status/cdown/tzserver/ci.yml?branch=master)](https://github.com/cdown/tzserver/actions?query=branch%3Amaster)
 
-tzserver is a very fast GeoIP lookup service in Rust, using the
+tzserver is a fast GeoIP lookup service in Rust, using the
 [Axum](https://docs.rs/axum/latest/axum/) web framework. It provides one
 possible server for [tzupdate](https://github.com/cdown/tzupdate).
 
