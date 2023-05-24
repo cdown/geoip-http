@@ -4,6 +4,15 @@ geoip-http is a fast GeoIP lookup service in Rust, using the
 [Axum](https://docs.rs/axum/latest/axum/) web framework. It provides one
 possible server for [tzupdate](https://github.com/cdown/tzupdate).
 
+## Features
+
+- Fast, uses Axum web framework
+- Simple, less than 200 lines of code
+- Safe hot reload of GeoIP DB without restarting
+- Direct dump of GeoIP data: no filtering
+- Support for both explicit and implicit (client IP) queries
+- Support for X-Forwarded-For, X-Real-IP, CloudFront, etc
+
 ## Usage
 
 Download GeoLite2-City.mmdb from
