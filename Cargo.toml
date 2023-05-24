@@ -2,6 +2,14 @@
 name = "geoip-http"
 version = "0.1.0"
 edition = "2021"
+authors = ["Chris Down <chris@chrisdown.name>"]
+description = "GeoIP lookup server over HTTP"
+repository = "https://github.com/cdown/geoip-http"
+readme = "README.md"
+keywords = ["geoip", "maxmind", "geolocation"]
+categories = ["web-programming::http-server"]
+license = "MIT"
+rust-version = "1.65.0"
 
 [dependencies]
 axum = { version = "0.6.18", default-features = false }
