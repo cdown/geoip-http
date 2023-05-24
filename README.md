@@ -106,3 +106,8 @@ ExecStart=/usr/bin/geoip-http --db ...
 ExecReload=/usr/bin/curl -v http://127.0.0.1:3000/reload/geoip
 Restart=always
 ```
+
+## Attribution
+
+This product is designed to use GeoLite2 data created by MaxMind, available
+from https://maxmind.com.
