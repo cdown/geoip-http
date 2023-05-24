@@ -67,7 +67,7 @@ Fill in `ssl_certificate` and `ssl_certificate_key`.
 ```
 http {
     limit_conn_zone $binary_remote_addr zone=geoip_conn_limit:2m;
-    limit_req_zone $binary_remote_addr zone=geoip_rate_limit:2m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=geoip_rate_limit:2m rate=100r/m;
 
     upstream geoip-backend {
         server 127.0.0.1:3000;
@@ -102,7 +102,7 @@ http {
 
         location / {
             limit_req zone=geoip_rate_limit;
-            limit_conn addr 5;
+            limit_conn addr 50;
             proxy_pass http://geoip-backend;
         }
     }
