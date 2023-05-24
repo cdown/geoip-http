@@ -103,6 +103,6 @@ Fill in `--db`.
 ```
 [Service]
 ExecStart=/usr/bin/geoip-http --db ...
-ExecReload=/usr/bin/curl -v http://127.0.0.1:3000/reload_geoip
+ExecReload=/usr/bin/curl -v http://127.0.0.1:3000/reload/geoip
 Restart=always
 ```

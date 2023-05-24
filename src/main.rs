@@ -170,8 +170,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
     let app = Router::new()
         .route("/", get(get_geoip_with_client_ip))
-        .route("/reload_geoip", get(reload_geoip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
+        .route("/reload/geoip", get(reload_geoip))
         .layer(Extension(reader))
         .layer(Extension(cfg.clone()));
     let addr = SocketAddr::from((cfg.ip, cfg.port));
