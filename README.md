@@ -82,7 +82,11 @@ http {
         client_body_timeout 2s;
         client_header_timeout 2s;
 
-        return 301 https://$host$request_uri;
+        location / {
+            limit_req zone=geoip_rate_limit;
+            limit_conn addr 5;
+            return 301 https://$host$request_uri;
+        }
     }
 
     server {
