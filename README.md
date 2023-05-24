@@ -16,7 +16,18 @@ with the `--db` option.
 
 You can then query `/` to get data for the connecting IP (respecting things
 like X-Real-IP, X-Forwarded-For, and the like), or `/8.8.8.8` to get details
-for (for example) 8.8.8.8.
+for (for example) 8.8.8.8:
+
+```
+% curl --silent http://127.0.0.1:3000/8.8.8.8 | jq '.location'
+{
+  "accuracy_radius": 5,
+  "latitude": 34.0544,
+  "longitude": -118.2441,
+  "metro_code": 803,
+  "time_zone": "America/Los_Angeles"
+}
+```
 
 ## Rate limiting
 
