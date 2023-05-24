@@ -1,6 +1,6 @@
-# tzserver | [![Tests](https://img.shields.io/github/actions/workflow/status/cdown/tzserver/ci.yml?branch=master)](https://github.com/cdown/tzserver/actions?query=branch%3Amaster)
+# geoip-http | [![Tests](https://img.shields.io/github/actions/workflow/status/cdown/geoip-http/ci.yml?branch=master)](https://github.com/cdown/geoip-http/actions?query=branch%3Amaster)
 
-tzserver is a fast GeoIP lookup service in Rust, using the
+geoip-http is a fast GeoIP lookup service in Rust, using the
 [Axum](https://docs.rs/axum/latest/axum/) web framework. It provides one
 possible server for [tzupdate](https://github.com/cdown/tzupdate).
 
@@ -20,7 +20,7 @@ for (for example) 8.8.8.8.
 
 ## Rate limiting
 
-tzserver is designed to be run behind a local reverse proxy, so rate limiting
+geoip-http is designed to be run behind a local reverse proxy, so rate limiting
 generally should happen there. It can also be added via
 [tower-governor](https://github.com/benwis/tower-governor).
 
@@ -85,13 +85,13 @@ http {
 }
 ```
 
-### Systemd unit for tzserver
+### Systemd unit for geoip-http
 
 Fill in `--db`.
 
 ```
 [Service]
-ExecStart=/usr/bin/tzserver --db ...
+ExecStart=/usr/bin/geoip-http --db ...
 ExecReload=/usr/bin/curl -v http://127.0.0.1:3000/reload_geoip
 Restart=always
 ```
