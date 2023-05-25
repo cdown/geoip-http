@@ -54,7 +54,7 @@ impl IpOrigin {
     fn cache_control(&self) -> &'static str {
         match self {
             IpOrigin::UserProvided(_) => "public, max-age=3600, stale-if-error=82800",
-            IpOrigin::Inferred(_) => "private, max-age=3600",
+            IpOrigin::Inferred(_) => "no-store",
         }
     }
 }
