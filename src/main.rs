@@ -147,7 +147,10 @@ impl IntoResponse for ReloadStatus {
             ),
             Self::InternalServerError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err),
         };
-        resp.into_response()
+        let mut resp = resp.into_response();
+        resp.headers_mut()
+            .insert("Cache-Control", HeaderValue::from_static("no-store"));
+        resp
     }
 }
 
@@ -155,36 +158,29 @@ async fn reload_geoip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
     Extension(cfg): Extension<Arc<Config>>,
 ) -> impl IntoResponse {
-    async fn inner(reader: Arc<RwLock<Reader<Mmap>>>, cfg: Arc<Config>) -> ReloadStatus {
-        static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
+    static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
 
-        if cfg.disable_db_reloading {
-            return ReloadStatus::ReloadingDisabled;
-        }
-
-        let now = Instant::now();
-        let reload_time = NEXT_RELOAD_TIME.get_or_init(|| Mutex::new(now));
-
-        let mut reload_time = reload_time.lock().await;
-        if *reload_time <= now {
-            match Reader::open_mmap(&cfg.db) {
-                Ok(new_reader) => {
-                    let mut old_reader = reader.write().await;
-                    *old_reader = new_reader;
-                    *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
-                    ReloadStatus::Success
-                }
-                Err(err) => ReloadStatus::InternalServerError(err.to_string()),
-            }
-        } else {
-            ReloadStatus::TooEarlyToReload
-        }
+    if cfg.disable_db_reloading {
+        return ReloadStatus::ReloadingDisabled;
     }
 
-    let mut resp = inner(reader, cfg).await.into_response();
-    resp.headers_mut()
-        .insert("Cache-Control", HeaderValue::from_static("no-store"));
-    resp
+    let now = Instant::now();
+    let reload_time = NEXT_RELOAD_TIME.get_or_init(|| Mutex::new(now));
+
+    let mut reload_time = reload_time.lock().await;
+    if *reload_time <= now {
+        match Reader::open_mmap(&cfg.db) {
+            Ok(new_reader) => {
+                let mut old_reader = reader.write().await;
+                *old_reader = new_reader;
+                *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
+                ReloadStatus::Success
+            }
+            Err(err) => ReloadStatus::InternalServerError(err.to_string()),
+        }
+    } else {
+        ReloadStatus::TooEarlyToReload
+    }
 }
 
 async fn wait_for_shutdown_request() {
