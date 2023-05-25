@@ -7,8 +7,9 @@ possible server for [tzupdate](https://github.com/cdown/tzupdate).
 ## Features
 
 - Fast, uses Axum web framework
-- Simple, less than 200 lines of code
+- Simple, less than 250 lines of code
 - Safe hot reload of GeoIP DB without restarting
+- Correct cache behaviour for implicit/explicit IP lookup
 - Direct dump of GeoIP data: no filtering
 - Support for both explicit and implicit (client IP) queries
 - Support for X-Forwarded-For, X-Real-IP, CloudFront, etc
