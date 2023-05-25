@@ -2,7 +2,7 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Router;
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
@@ -44,32 +44,66 @@ struct TimezoneErrorResponse {
     query: String,
 }
 
+enum IpOrigin {
+    UserProvided(IpAddr),
+    Inferred(IpAddr),
+}
+
+impl IpOrigin {
+    fn cache_control(&self) -> &'static str {
+        match self {
+            IpOrigin::UserProvided(_) => "public, max-age=3600, stale-if-error=82800",
+            IpOrigin::Inferred(_) => "private, max-age=3600",
+        }
+    }
+}
+
+impl std::ops::Deref for IpOrigin {
+    type Target = IpAddr;
+
+    fn deref(&self) -> &IpAddr {
+        match self {
+            IpOrigin::UserProvided(ip) | IpOrigin::Inferred(ip) => ip,
+        }
+    }
+}
+
 async fn get_geoip(
     reader: Arc<RwLock<Reader<Mmap>>>,
-    ip: IpAddr,
-) -> (StatusCode, Result<String, Json<TimezoneErrorResponse>>) {
+    ip: IpOrigin,
+) -> Result<impl IntoResponse, StatusCode> {
     let reader = reader.read().await;
-    match reader.lookup::<maxminddb::geoip2::City>(ip) {
+
+    match reader.lookup::<maxminddb::geoip2::City>(*ip) {
         Ok(city) => {
-            // geoip2::City contains values borrowed from reader, so we must render it right away
             let mut city_json = json!(city);
             if let Some(obj) = city_json.as_object_mut() {
                 obj.insert("query".into(), ip.to_string().into());
             }
-            (StatusCode::OK, Ok(city_json.to_string()))
+            // geoip2::City contains values borrowed from reader, so we must render it right away
+            Response::builder()
+                .header("Content-Type", "application/json")
+                .header("Cache-Control", ip.cache_control())
+                .body(city_json.to_string())
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
         Err(err) => {
             let status_code = match err {
                 MaxMindDBError::AddressNotFoundError(_) => StatusCode::NOT_FOUND,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
-            (
-                status_code,
-                Err(Json(TimezoneErrorResponse {
-                    query: ip.to_string(),
-                    error: err.to_string(),
-                })),
-            )
+            Response::builder()
+                .status(status_code)
+                .header("Content-Type", "application/json")
+                .header("Cache-Control", "no-store")
+                .body(
+                    json!(TimezoneErrorResponse {
+                        query: ip.to_string(),
+                        error: err.to_string(),
+                    })
+                    .to_string(),
+                )
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -79,14 +113,14 @@ async fn get_geoip_with_client_ip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
 ) -> impl IntoResponse {
     // We use the insecure one to get X-Forwarded-For, etc
-    get_geoip(reader, insecure_client_ip).await
+    get_geoip(reader, IpOrigin::Inferred(insecure_client_ip)).await
 }
 
 async fn get_geoip_with_explicit_ip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
     Path(ip): Path<IpAddr>,
 ) -> impl IntoResponse {
-    get_geoip(reader, ip).await
+    get_geoip(reader, IpOrigin::UserProvided(ip)).await
 }
 
 #[derive(Debug)]
