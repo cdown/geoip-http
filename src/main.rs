@@ -79,6 +79,7 @@ async fn get_geoip(
             let mut city_json = json!(city);
             if let Some(obj) = city_json.as_object_mut() {
                 obj.insert("query".into(), ip.to_string().into());
+                obj.insert("error".into(), serde_json::Value::Null);
             }
             // geoip2::City contains values borrowed from reader, so we must render it right away
             Response::builder()
