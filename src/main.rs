@@ -15,6 +15,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
+use tower_http::trace::{self, TraceLayer};
+use tracing::Level;
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -183,6 +185,7 @@ async fn reload_geoip(
     }
 }
 
+#[tracing_attributes::instrument]
 async fn wait_for_shutdown_request() {
     let ctrl_c = async { signal::ctrl_c().await.unwrap() };
 
@@ -201,19 +204,33 @@ async fn wait_for_shutdown_request() {
         _ = ctrl_c => {},
         _ = sigterm => {},
     }
+
+    tracing::info!("Request received, shutting down");
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt().with_target(false).init();
+    let _span = tracing::info_span!("main").entered();
+
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
+
     let app = Router::new()
         .route("/", get(get_geoip_with_client_ip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
         .route("/reload/geoip", get(reload_geoip))
         .layer(Extension(reader))
-        .layer(Extension(cfg.clone()));
+        .layer(Extension(cfg.clone()))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+        );
+
     let addr = SocketAddr::from((cfg.ip, cfg.port));
+    tracing::info!("Preparing to listen on {}", addr);
+
     Ok(axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(wait_for_shutdown_request())
