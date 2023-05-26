@@ -6,7 +6,7 @@ use axum::routing::get;
 use axum::Router;
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
-use http::{HeaderValue, Request};
+use http::{header, HeaderValue, Request};
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
@@ -92,7 +92,7 @@ async fn get_geoip(
             // geoip2::City contains values borrowed from reader, so we must render it right away
             Response::builder()
                 .header("Content-Type", "application/json")
-                .header("Cache-Control", ip.cache_control())
+                .header(header::CACHE_CONTROL, ip.cache_control())
                 .body(city_json.to_string())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -110,7 +110,7 @@ async fn get_geoip(
             Response::builder()
                 .status(status_code)
                 .header("Content-Type", "application/json")
-                .header("Cache-Control", "no-store")
+                .header(header::CACHE_CONTROL, "no-store")
                 .body(
                     json!(TimezoneErrorResponse {
                         query: ip.to_string(),
@@ -162,7 +162,7 @@ impl IntoResponse for ReloadStatus {
         };
         let mut resp = resp.into_response();
         resp.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("no-store"));
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         resp
     }
 }
