@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
 use tower_http::trace::{self, TraceLayer};
-use tracing::{error_span, Level};
+use tracing::{error, error_span, info, info_span, Level};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -79,8 +79,11 @@ async fn get_geoip(
 ) -> Result<impl IntoResponse, StatusCode> {
     let reader = reader.read().await;
 
+    let _span = info_span!("get_geoip", ip = %ip.to_string()).entered();
+
     match reader.lookup::<maxminddb::geoip2::City>(*ip) {
         Ok(city) => {
+            info!("IP in database");
             let mut city_json = json!(city);
             if let Some(obj) = city_json.as_object_mut() {
                 obj.insert("query".into(), ip.to_string().into());
@@ -95,8 +98,14 @@ async fn get_geoip(
         }
         Err(err) => {
             let status_code = match err {
-                MaxMindDBError::AddressNotFoundError(_) => StatusCode::NOT_FOUND,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
+                MaxMindDBError::AddressNotFoundError(_) => {
+                    info!("IP not in database");
+                    StatusCode::NOT_FOUND
+                }
+                ref e => {
+                    error!("IP lookup error: {e}");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
             };
             Response::builder()
                 .status(status_code)
@@ -165,6 +174,7 @@ async fn reload_geoip(
     static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
 
     if cfg.disable_db_reloading {
+        info!("GeoIP DB reload requested, but disabled");
         return ReloadStatus::ReloadingDisabled;
     }
 
@@ -178,11 +188,16 @@ async fn reload_geoip(
                 let mut old_reader = reader.write().await;
                 *old_reader = new_reader;
                 *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
+                info!("successfully reloaded GeoIP DB");
                 ReloadStatus::Success
             }
-            Err(err) => ReloadStatus::InternalServerError(err.to_string()),
+            Err(err) => {
+                error!("error reloading GeoIP, restoring old version: {err}");
+                ReloadStatus::InternalServerError(err.to_string())
+            }
         }
     } else {
+        info!("GeoIP DB reload requested, but too early to reload");
         ReloadStatus::TooEarlyToReload
     }
 }
@@ -207,7 +222,7 @@ async fn wait_for_shutdown_request() {
         _ = sigterm => {},
     }
 
-    tracing::info!("Request received, shutting down");
+    info!("shutdown request received, shutting down");
 }
 
 fn request_span(req: &Request<Body>) -> tracing::Span {
@@ -226,7 +241,7 @@ fn request_span(req: &Request<Body>) -> tracing::Span {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_target(false).init();
-    let _span = tracing::info_span!("main").entered();
+    let _span = info_span!("main").entered();
 
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
@@ -245,7 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
-    tracing::info!("Preparing to listen on {}", addr);
+    info!("preparing to listen on {}", addr);
 
     Ok(axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
