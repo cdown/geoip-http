@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
 use tower_http::trace::{self, TraceLayer};
-use tracing::{error, error_span, info, info_span, Level};
+use tracing::{debug, debug_span, error, info, info_span, Level};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -79,11 +79,11 @@ async fn get_geoip(
 ) -> Result<impl IntoResponse, StatusCode> {
     let reader = reader.read().await;
 
-    let _span = info_span!("get_geoip", ip = %ip.to_string()).entered();
+    let _span = debug_span!("get_geoip", ip = %ip.to_string()).entered();
 
     match reader.lookup::<maxminddb::geoip2::City>(*ip) {
         Ok(city) => {
-            info!("IP in database");
+            debug!("IP in database");
             let mut city_json = json!(city);
             if let Some(obj) = city_json.as_object_mut() {
                 obj.insert("query".into(), ip.to_string().into());
@@ -99,7 +99,7 @@ async fn get_geoip(
         Err(err) => {
             let status_code = match err {
                 MaxMindDBError::AddressNotFoundError(_) => {
-                    info!("IP not in database");
+                    debug!("IP not in database");
                     StatusCode::NOT_FOUND
                 }
                 ref e => {
@@ -174,7 +174,7 @@ async fn reload_geoip(
     static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
 
     if cfg.disable_db_reloading {
-        info!("GeoIP DB reload requested, but disabled");
+        debug!("GeoIP DB reload requested, but disabled");
         return ReloadStatus::ReloadingDisabled;
     }
 
@@ -188,7 +188,7 @@ async fn reload_geoip(
                 let mut old_reader = reader.write().await;
                 *old_reader = new_reader;
                 *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
-                info!("successfully reloaded GeoIP DB");
+                debug!("successfully reloaded GeoIP DB");
                 ReloadStatus::Success
             }
             Err(err) => {
@@ -197,7 +197,7 @@ async fn reload_geoip(
             }
         }
     } else {
-        info!("GeoIP DB reload requested, but too early to reload");
+        debug!("GeoIP DB reload requested, but too early to reload");
         ReloadStatus::TooEarlyToReload
     }
 }
@@ -230,7 +230,7 @@ fn request_span(req: &Request<Body>) -> tracing::Span {
 
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
 
-    error_span!(
+    info_span!(
         "req",
         seq,
         method = %req.method(),
@@ -255,8 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(request_span)
-                .on_response(trace::DefaultOnResponse::new().level(Level::INFO))
-                .on_request(trace::DefaultOnRequest::new().level(Level::INFO)),
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
         );
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
