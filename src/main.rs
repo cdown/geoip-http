@@ -1,3 +1,4 @@
+use axum::body::Body;
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -5,18 +6,19 @@ use axum::routing::get;
 use axum::Router;
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
-use http::HeaderValue;
+use http::{HeaderValue, Request};
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
 use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
 use tower_http::trace::{self, TraceLayer};
-use tracing::Level;
+use tracing::{error_span, Level};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -208,6 +210,19 @@ async fn wait_for_shutdown_request() {
     tracing::info!("Request received, shutting down");
 }
 
+fn request_span(req: &Request<Body>) -> tracing::Span {
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+
+    error_span!(
+        "req",
+        seq,
+        method = %req.method(),
+        uri = %req.uri(),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_target(false).init();
@@ -224,7 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(Extension(cfg.clone()))
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(request_span)
                 .on_response(trace::DefaultOnResponse::new().level(Level::INFO))
                 .on_request(trace::DefaultOnRequest::new().level(Level::INFO)),
         );
