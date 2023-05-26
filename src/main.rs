@@ -9,7 +9,6 @@ use clap::Parser;
 use http::{header, HeaderValue, Request};
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
-use serde::Serialize;
 use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -41,12 +40,6 @@ struct Config {
     /// Disable DB reloading at runtime
     #[arg(long)]
     disable_db_reloading: bool,
-}
-
-#[derive(Serialize)]
-struct TimezoneErrorResponse {
-    error: String,
-    query: String,
 }
 
 enum IpOrigin {
@@ -96,30 +89,13 @@ async fn get_geoip(
                 .body(city_json.to_string())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
-        Err(err) => {
-            let status_code = match err {
-                MaxMindDBError::AddressNotFoundError(_) => {
-                    debug!("IP not in database: {}", *ip);
-                    StatusCode::NOT_FOUND
-                }
-                ref e => {
-                    error!("IP lookup error: {e}");
-                    StatusCode::INTERNAL_SERVER_ERROR
-                }
-            };
-            Response::builder()
-                .status(status_code)
-                .header("Content-Type", "application/json")
-                .header(header::CACHE_CONTROL, "no-store")
-                .body(
-                    json!(TimezoneErrorResponse {
-                        query: ip.to_string(),
-                        error: err.to_string(),
-                    })
-                    .to_string(),
-                )
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Err(err) => match err {
+            MaxMindDBError::AddressNotFoundError(_) => Err(StatusCode::NO_CONTENT),
+            ref e => {
+                error!("IP lookup error: {e}");
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        },
     }
 }
 
