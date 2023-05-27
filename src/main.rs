@@ -20,6 +20,8 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
+type SharedReader = Arc<RwLock<Reader<Mmap>>>;
+
 #[derive(Parser, Debug)]
 struct Config {
     /// The IP to listen on
@@ -67,10 +69,7 @@ impl std::ops::Deref for IpOrigin {
     }
 }
 
-async fn get_geoip(
-    reader: Arc<RwLock<Reader<Mmap>>>,
-    ip: IpOrigin,
-) -> Result<impl IntoResponse, StatusCode> {
+async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoResponse, StatusCode> {
     let reader = reader.read().await;
 
     let _span = info_span!("get_geoip", ip = %ip.to_string()).entered();
@@ -105,14 +104,14 @@ async fn get_geoip(
 
 async fn get_geoip_with_client_ip(
     InsecureClientIp(insecure_client_ip): InsecureClientIp,
-    Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
+    Extension(reader): Extension<SharedReader>,
 ) -> impl IntoResponse {
     // We use the insecure one to get X-Forwarded-For, etc
     get_geoip(reader, IpOrigin::Inferred(insecure_client_ip)).await
 }
 
 async fn get_geoip_with_explicit_ip(
-    Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
+    Extension(reader): Extension<SharedReader>,
     Path(ip): Path<IpAddr>,
 ) -> impl IntoResponse {
     get_geoip(reader, IpOrigin::UserProvided(ip)).await
@@ -148,7 +147,7 @@ impl IntoResponse for ReloadStatus {
 }
 
 async fn reload_geoip(
-    Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
+    Extension(reader): Extension<SharedReader>,
     Extension(cfg): Extension<Arc<Config>>,
 ) -> impl IntoResponse {
     static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
