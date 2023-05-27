@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
 use tower_http::trace::{OnResponse, TraceLayer};
-use tracing::{debug, debug_span, error, info, info_span, Level, Span};
+use tracing::{debug, error, info, info_span, Level, Span};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -72,7 +72,7 @@ async fn get_geoip(
 ) -> Result<impl IntoResponse, StatusCode> {
     let reader = reader.read().await;
 
-    let _span = debug_span!("get_geoip", ip = %ip.to_string()).entered();
+    let _span = info_span!("get_geoip", ip = %ip.to_string()).entered();
 
     match reader.lookup::<maxminddb::geoip2::City>(*ip) {
         Ok(city) => {
