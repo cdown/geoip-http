@@ -40,6 +40,10 @@ for (for example) 8.8.8.8:
 }
 ```
 
+## Logging
+
+To see debug info, run with `RUST_LOG=geoip_http=debug,tower_http=debug`.
+
 ## Rate limiting
 
 geoip-http is designed to be run behind a local reverse proxy, so rate limiting
