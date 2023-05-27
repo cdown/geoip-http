@@ -16,8 +16,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
-use tower_http::trace::{self, TraceLayer};
-use tracing::{debug, error, info, info_span, Level};
+use tower_http::trace::TraceLayer;
+use tracing::{debug, error, info, info_span};
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -90,7 +91,10 @@ async fn get_geoip(
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
         Err(err) => match err {
-            MaxMindDBError::AddressNotFoundError(_) => Err(StatusCode::NO_CONTENT),
+            MaxMindDBError::AddressNotFoundError(_) => {
+                debug!("IP not in database");
+                Err(StatusCode::NO_CONTENT)
+            }
             ref e => {
                 error!("IP lookup error: {e}");
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -216,7 +220,13 @@ fn request_span(req: &Request<Body>) -> tracing::Span {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt().with_target(false).init();
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+    tracing_subscriber::fmt()
+        .with_target(true)
+        .with_env_filter(filter)
+        .init();
     let _span = info_span!("main").entered();
 
     let cfg = Arc::new(Config::parse());
@@ -228,11 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/reload/geoip", get(reload_geoip))
         .layer(Extension(reader))
         .layer(Extension(cfg.clone()))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(request_span)
-                .on_response(trace::DefaultOnResponse::new().level(Level::DEBUG)),
-        );
+        .layer(TraceLayer::new_for_http().make_span_with(request_span));
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
     let tcp = TcpListener::bind(addr)?;
