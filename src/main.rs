@@ -19,13 +19,9 @@ type SharedReader = Arc<RwLock<Reader<Mmap>>>;
 
 #[derive(Parser, Debug)]
 struct Config {
-    /// The IP to listen on
-    #[arg(short, long, default_value = "0.0.0.0")]
-    ip: IpAddr,
-
-    /// The port to listen on
-    #[arg(short, long, default_value = "3000")]
-    port: u16,
+    /// The IP and port to listen on
+    #[arg(short, long, default_value = "0.0.0.0:3000")]
+    listen: SocketAddr,
 
     /// The location of the GeoLite2 database
     #[arg(short, long, default_value = "GeoLite2-City.mmdb")]
@@ -233,10 +229,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(Extension(cfg.clone()))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
 
-    let addr = SocketAddr::from((cfg.ip, cfg.port));
-    let tcp = TcpListener::bind(addr)?;
-
-    info!("Listening on {}", addr);
+    let tcp = TcpListener::bind(cfg.listen)?;
+    info!("Listening on {}", cfg.listen);
 
     Ok(axum::Server::from_tcp(tcp)?
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
