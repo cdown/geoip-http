@@ -207,7 +207,7 @@ fn request_span(req: &http::Request<axum::body::Body>) -> tracing::Span {
         "req",
         seq = %SEQ.fetch_add(1, Ordering::Relaxed),
         method = %req.method(),
-        uri = %req.uri(),
+        path = %req.uri(),
     )
 }
 
