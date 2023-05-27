@@ -207,12 +207,9 @@ async fn wait_for_shutdown_request() {
 
 fn request_span(req: &Request<Body>) -> tracing::Span {
     static SEQ: AtomicUsize = AtomicUsize::new(0);
-
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-
     info_span!(
         "req",
-        seq,
+        seq = %SEQ.fetch_add(1, Ordering::Relaxed),
         method = %req.method(),
         uri = %req.uri(),
     )
