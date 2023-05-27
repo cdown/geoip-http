@@ -1,22 +1,17 @@
-use axum::body::Body;
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
-use http::{header, HeaderValue, Request};
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
-use serde_json::json;
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
-use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -77,7 +72,7 @@ async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoRespon
     match reader.lookup::<maxminddb::geoip2::City>(*ip) {
         Ok(city) => {
             debug!("IP in database");
-            let mut city_json = json!(city);
+            let mut city_json = serde_json::json!(city);
             if let Some(obj) = city_json.as_object_mut() {
                 obj.insert("query".into(), ip.to_string().into());
                 obj.insert("error".into(), serde_json::Value::Null);
@@ -85,7 +80,7 @@ async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoRespon
             // geoip2::City contains values borrowed from reader, so we must render it right away
             Response::builder()
                 .header("Content-Type", "application/json")
-                .header(header::CACHE_CONTROL, ip.cache_control())
+                .header(http::header::CACHE_CONTROL, ip.cache_control())
                 .body(city_json.to_string())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -140,8 +135,10 @@ impl IntoResponse for ReloadStatus {
             Self::InternalServerError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err),
         };
         let mut resp = resp.into_response();
-        resp.headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        resp.headers_mut().insert(
+            http::header::CACHE_CONTROL,
+            http::HeaderValue::from_static("no-store"),
+        );
         resp
     }
 }
@@ -204,7 +201,7 @@ async fn wait_for_shutdown_request() {
     info!("shutdown request received, shutting down");
 }
 
-fn request_span(req: &Request<Body>) -> tracing::Span {
+fn request_span(req: &http::Request<axum::body::Body>) -> tracing::Span {
     static SEQ: AtomicUsize = AtomicUsize::new(0);
     info_span!(
         "req",
@@ -228,13 +225,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
 
-    let app = Router::new()
+    let app = axum::Router::new()
         .route("/", get(get_geoip_with_client_ip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
         .route("/reload/geoip", get(reload_geoip))
         .layer(Extension(reader))
         .layer(Extension(cfg.clone()))
-        .layer(TraceLayer::new_for_http().make_span_with(request_span));
+        .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
     let tcp = TcpListener::bind(addr)?;
