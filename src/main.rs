@@ -16,8 +16,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
-use tower_http::trace::{OnResponse, TraceLayer};
-use tracing::{debug, error, info, info_span, Level, Span};
+use tower_http::trace::{self, TraceLayer};
+use tracing::{debug, error, info, info_span, Level};
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -143,34 +143,6 @@ impl IntoResponse for ReloadStatus {
     }
 }
 
-#[derive(Clone)]
-struct CustomOnResponse;
-
-/// Levels must be constant, so this is to avoid code duplication
-macro_rules! log_req_done {
-    (
-        $level:expr, $status:expr, $latency:expr
-    ) => {{
-        tracing::event!(
-            $level,
-            lat = format_args!("{}ns", $latency.as_nanos()),
-            status = $status,
-            "req done"
-        );
-    }};
-}
-
-impl<B> OnResponse<B> for CustomOnResponse {
-    fn on_response(self, response: &Response<B>, latency: Duration, _: &Span) {
-        let s = response.status().as_u16();
-        match s {
-            200..=299 => log_req_done!(Level::INFO, s, latency),
-            500..=599 => log_req_done!(Level::ERROR, s, latency),
-            _ => log_req_done!(Level::DEBUG, s, latency),
-        };
-    }
-}
-
 async fn reload_geoip(
     Extension(reader): Extension<Arc<RwLock<Reader<Mmap>>>>,
     Extension(cfg): Extension<Arc<Config>>,
@@ -259,7 +231,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(request_span)
-                .on_response(CustomOnResponse),
+                .on_response(trace::DefaultOnResponse::new().level(Level::DEBUG)),
         );
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
