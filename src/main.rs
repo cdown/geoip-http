@@ -36,47 +36,45 @@ struct Config {
     disable_db_reloading: bool,
 }
 
+struct IpWithOrigin {
+    ip: IpAddr,
+    origin: IpOrigin,
+}
+
 enum IpOrigin {
-    UserProvided(IpAddr),
-    Inferred(IpAddr),
+    UserProvided,
+    Inferred,
 }
 
 impl IpOrigin {
     fn cache_control(&self) -> &'static str {
         match self {
-            IpOrigin::UserProvided(_) => "public, max-age=3600, stale-if-error=82800",
-            IpOrigin::Inferred(_) => "no-store",
+            IpOrigin::UserProvided => "public, max-age=3600, stale-if-error=82800",
+            IpOrigin::Inferred => "no-store",
         }
     }
 }
 
-impl std::ops::Deref for IpOrigin {
-    type Target = IpAddr;
-
-    fn deref(&self) -> &IpAddr {
-        match self {
-            IpOrigin::UserProvided(ip) | IpOrigin::Inferred(ip) => ip,
-        }
-    }
-}
-
-async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoResponse, StatusCode> {
+async fn get_geoip(
+    reader: SharedReader,
+    iwo: IpWithOrigin,
+) -> Result<impl IntoResponse, StatusCode> {
     let reader = reader.read().await;
 
-    let _span = info_span!("get_geoip", ip = %ip.to_string()).entered();
+    let _span = info_span!("get_geoip", ip = %iwo.ip.to_string()).entered();
 
-    match reader.lookup::<maxminddb::geoip2::City>(*ip) {
+    match reader.lookup::<maxminddb::geoip2::City>(iwo.ip) {
         Ok(city) => {
             debug!("IP in database");
             let mut city_json = serde_json::json!(city);
             if let Some(obj) = city_json.as_object_mut() {
-                obj.insert("query".into(), ip.to_string().into());
+                obj.insert("query".into(), iwo.ip.to_string().into());
                 obj.insert("error".into(), serde_json::Value::Null);
             }
             // geoip2::City contains values borrowed from reader, so we must render it right away
             Response::builder()
                 .header("Content-Type", "application/json")
-                .header(http::header::CACHE_CONTROL, ip.cache_control())
+                .header(http::header::CACHE_CONTROL, iwo.origin.cache_control())
                 .body(city_json.to_string())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -98,14 +96,28 @@ async fn get_geoip_with_client_ip(
     Extension(reader): Extension<SharedReader>,
 ) -> impl IntoResponse {
     // We use the insecure one to get X-Forwarded-For, etc
-    get_geoip(reader, IpOrigin::Inferred(insecure_client_ip)).await
+    get_geoip(
+        reader,
+        IpWithOrigin {
+            ip: insecure_client_ip,
+            origin: IpOrigin::Inferred,
+        },
+    )
+    .await
 }
 
 async fn get_geoip_with_explicit_ip(
     Extension(reader): Extension<SharedReader>,
     Path(ip): Path<IpAddr>,
 ) -> impl IntoResponse {
-    get_geoip(reader, IpOrigin::UserProvided(ip)).await
+    get_geoip(
+        reader,
+        IpWithOrigin {
+            ip,
+            origin: IpOrigin::UserProvided,
+        },
+    )
+    .await
 }
 
 #[derive(Debug)]
