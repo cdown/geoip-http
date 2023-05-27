@@ -10,7 +10,7 @@ use http::{header, HeaderValue, Request};
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use serde_json::json;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -235,9 +235,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let addr = SocketAddr::from((cfg.ip, cfg.port));
-    info!("preparing to listen on {}", addr);
+    let tcp = TcpListener::bind(addr)?;
 
-    Ok(axum::Server::bind(&addr)
+    info!("Listening on {}", addr);
+
+    Ok(axum::Server::from_tcp(tcp)?
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(wait_for_shutdown_request())
         .await?)
