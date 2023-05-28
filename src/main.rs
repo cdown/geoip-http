@@ -221,16 +221,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Arc::new(Config::parse());
     let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
 
+    let tcp = TcpListener::bind(cfg.listen)?;
+    info!("Listening on {}", cfg.listen);
+
     let app = axum::Router::new()
         .route("/", get(get_geoip_with_client_ip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
         .route("/reload/geoip", get(reload_geoip))
         .layer(Extension(reader))
-        .layer(Extension(cfg.clone()))
+        .layer(Extension(cfg))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
-
-    let tcp = TcpListener::bind(cfg.listen)?;
-    info!("Listening on {}", cfg.listen);
 
     Ok(axum::Server::from_tcp(tcp)?
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
