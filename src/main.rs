@@ -1,3 +1,4 @@
+use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -11,7 +12,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
-use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -143,7 +143,7 @@ async fn reload_geoip(
     Extension(reader): Extension<SharedReader>,
     Extension(cfg): Extension<Arc<Config>>,
 ) -> impl IntoResponse {
-    static NEXT_RELOAD_TIME: OnceCell<Mutex<Instant>> = OnceCell::new();
+    static NEXT_RELOAD_TIME: OnceCell<RwLock<Instant>> = OnceCell::new();
 
     if cfg.disable_db_reloading {
         debug!("GeoIP DB reload requested, but disabled");
@@ -151,10 +151,11 @@ async fn reload_geoip(
     }
 
     let now = Instant::now();
-    let reload_time = NEXT_RELOAD_TIME.get_or_init(|| Mutex::new(now));
+    let reload_time = NEXT_RELOAD_TIME.get_or_init(|| RwLock::new(now));
 
-    let mut reload_time = reload_time.lock().await;
+    let reload_time = reload_time.upgradable_read().await;
     if *reload_time <= now {
+        let mut reload_time = RwLockUpgradableReadGuard::upgrade(reload_time).await;
         match Reader::open_mmap(&cfg.db) {
             Ok(new_reader) => {
                 let mut old_reader = reader.write().await;
