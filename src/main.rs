@@ -44,8 +44,8 @@ enum IpOrigin {
 impl IpOrigin {
     fn cache_control(&self) -> &'static str {
         match self {
-            IpOrigin::UserProvided(_) => "public, max-age=3600, stale-if-error=82800",
-            IpOrigin::Inferred(_) => "no-store",
+            Self::UserProvided(_) => "public, max-age=3600, stale-if-error=82800",
+            Self::Inferred(_) => "no-store",
         }
     }
 }
@@ -53,9 +53,9 @@ impl IpOrigin {
 impl std::ops::Deref for IpOrigin {
     type Target = IpAddr;
 
-    fn deref(&self) -> &IpAddr {
+    fn deref(&self) -> &Self::Target {
         match self {
-            IpOrigin::UserProvided(ip) | IpOrigin::Inferred(ip) => ip,
+            Self::UserProvided(ip) | Self::Inferred(ip) => ip,
         }
     }
 }
