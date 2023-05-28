@@ -42,7 +42,7 @@ enum IpOrigin {
 }
 
 impl IpOrigin {
-    fn cache_control(&self) -> &'static str {
+    const fn cache_control(&self) -> &'static str {
         match self {
             Self::UserProvided(_) => "public, max-age=3600, stale-if-error=82800",
             Self::Inferred(_) => "no-store",
