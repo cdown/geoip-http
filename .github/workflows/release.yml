@@ -1,0 +1,22 @@
+# On releases, upload a statically linked, musl-based binary
+
+jobs:
+  build-upload:
+    name: Build and upload release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-std-x86_64-unknown-linux-musl
+      - run: cargo build --release --target rust-std-x86_64-unknown-linux-musl
+      - run: gh release upload ${{ github.ref_name }} target/x86_64-unknown-linux-musl/release/geoip-http
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
