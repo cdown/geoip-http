@@ -27,7 +27,7 @@ struct Config {
     #[arg(short, long, default_value = "GeoLite2-City.mmdb")]
     db: String,
 
-    /// Minimum time before db reloads at /reload_geoip
+    /// Minimum time before db reloads at /db/reload
     #[arg(long, default_value = "60")]
     db_reload_secs: u64,
 
@@ -139,7 +139,7 @@ impl IntoResponse for ReloadStatus {
     }
 }
 
-async fn reload_geoip(
+async fn db_reload(
     Extension(reader): Extension<SharedReader>,
     Extension(cfg): Extension<Arc<Config>>,
 ) -> impl IntoResponse {
@@ -228,7 +228,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = axum::Router::new()
         .route("/", get(get_geoip_with_client_ip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
-        .route("/reload/geoip", get(reload_geoip))
+        .route("/db/reload", get(db_reload))
         .layer(Extension(reader))
         .layer(Extension(cfg))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
