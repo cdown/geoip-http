@@ -156,9 +156,9 @@ async fn db_reload(
 
     let reload_time = reload_time.upgradable_read().await;
     if *reload_time <= now {
-        let mut reload_time = RwLockUpgradableReadGuard::upgrade(reload_time).await;
         match Reader::open_mmap(&cfg.db) {
             Ok(new_reader) => {
+                let mut reload_time = RwLockUpgradableReadGuard::upgrade(reload_time).await;
                 let mut old_reader = reader.write().await;
                 *old_reader = new_reader;
                 *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
