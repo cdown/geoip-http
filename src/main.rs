@@ -8,6 +8,7 @@ use clap::Parser;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use std::net::{IpAddr, SocketAddr, TcpListener};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,7 +26,7 @@ struct Config {
 
     /// The location of the GeoLite2 database
     #[arg(short, long, default_value = "GeoLite2-City.mmdb")]
-    db: String,
+    db: PathBuf,
 
     /// Minimum time before db reloads at /db/reload
     #[arg(long, default_value = "60")]
