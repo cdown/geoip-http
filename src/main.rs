@@ -176,6 +176,11 @@ async fn db_reload(
     }
 }
 
+async fn db_epoch(Extension(reader): Extension<SharedReader>) -> impl IntoResponse {
+    let reader = reader.read().await;
+    reader.metadata.build_epoch.to_string()
+}
+
 #[tracing_attributes::instrument]
 async fn wait_for_shutdown_request() {
     let ctrl_c = async { signal::ctrl_c().await.unwrap() };
@@ -230,6 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(get_geoip_with_client_ip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
         .route("/db/reload", get(db_reload))
+        .route("/db/epoch", get(db_epoch))
         .layer(Extension(reader))
         .layer(Extension(cfg))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
