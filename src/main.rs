@@ -111,7 +111,7 @@ async fn get_geoip_with_explicit_ip(
 
 #[derive(Debug)]
 enum ReloadStatus {
-    Success,
+    Success { old_ver: u64, new_ver: u64 },
     ReloadingDisabled,
     TooEarlyToReload,
     InternalServerError(String),
@@ -120,7 +120,10 @@ enum ReloadStatus {
 impl IntoResponse for ReloadStatus {
     fn into_response(self) -> Response {
         let resp = match self {
-            Self::Success => (StatusCode::OK, "DB reloaded".to_string()),
+            Self::Success { old_ver, new_ver } => (
+                StatusCode::OK,
+                format!("DB reloaded, old version {old_ver}, new version {new_ver}"),
+            ),
             Self::ReloadingDisabled => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "DB reloading disabled at startup".to_string(),
@@ -160,10 +163,13 @@ async fn db_reload(
             Ok(new_reader) => {
                 let mut reload_time = RwLockUpgradableReadGuard::upgrade(reload_time).await;
                 let mut old_reader = reader.write().await;
+                let old_ver = old_reader.metadata.build_epoch;
+                let new_ver = new_reader.metadata.build_epoch;
+
                 *old_reader = new_reader;
                 *reload_time = now + Duration::from_secs(cfg.db_reload_secs);
                 debug!("successfully reloaded GeoIP DB");
-                ReloadStatus::Success
+                ReloadStatus::Success { new_ver, old_ver }
             }
             Err(err) => {
                 error!("error reloading GeoIP, restoring old version: {err}");
