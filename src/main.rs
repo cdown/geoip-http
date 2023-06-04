@@ -162,7 +162,18 @@ async fn db_reload(
         match Reader::open_mmap(&cfg.db) {
             Ok(new_reader) => {
                 let mut reload_time = RwLockUpgradableReadGuard::upgrade(reload_time).await;
-                let mut old_reader = reader.write().await;
+                let old_reader = reader.upgradable_read().await;
+
+                let old_dt = &old_reader.metadata.database_type;
+                let new_dt = &new_reader.metadata.database_type;
+                if new_dt != old_dt {
+                    let msg = format!("Refusing to change database type from {old_dt} to {new_dt}");
+                    error!("{}", msg);
+                    return ReloadStatus::InternalServerError(msg);
+                }
+
+                let mut old_reader = RwLockUpgradableReadGuard::upgrade(old_reader).await;
+
                 let old_ver = old_reader.metadata.build_epoch;
                 let new_ver = new_reader.metadata.build_epoch;
 
@@ -221,7 +232,7 @@ fn request_span(req: &http::Request<axum::body::Body>) -> tracing::Span {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), anyhow::Error> {
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
@@ -232,7 +243,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _span = info_span!("main").entered();
 
     let cfg = Arc::new(Config::parse());
-    let reader = Arc::new(RwLock::new(Reader::open_mmap(&cfg.db)?));
+    let reader = Reader::open_mmap(&cfg.db)?;
+    if reader.metadata.database_type != "GeoLite2-City" {
+        anyhow::bail!("Invalid database type: {}", reader.metadata.database_type);
+    }
+    let reader = Arc::new(RwLock::new(reader));
 
     let tcp = TcpListener::bind(cfg.listen)?;
     info!("Listening on {}", cfg.listen);
