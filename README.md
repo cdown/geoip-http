@@ -40,6 +40,10 @@ for (for example) 8.8.8.8:
 }
 ```
 
+The format matches that of the maxminddb crate's [City
+struct](https://docs.rs/maxminddb/latest/maxminddb/geoip2/struct.City.html),
+represented as JSON by its `Serialize` trait.
+
 ## Logging
 
 To see debug info, run with `RUST_LOG=geoip_http=debug,tower_http=debug`.
