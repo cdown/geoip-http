@@ -21,7 +21,7 @@ type SharedReader = Arc<RwLock<Reader<Mmap>>>;
 #[derive(Parser, Debug)]
 struct Config {
     /// The IP and port to listen on
-    #[arg(short, long, default_value = "0.0.0.0:3000")]
+    #[arg(short, long, default_value = "[::]:3000")]
     listen: SocketAddr,
 
     /// The location of the GeoLite2 database
