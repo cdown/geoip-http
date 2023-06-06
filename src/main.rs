@@ -195,7 +195,12 @@ async fn db_reload(
 
 async fn db_epoch(Extension(reader): Extension<SharedReader>) -> impl IntoResponse {
     let reader = reader.read().await;
-    reader.metadata.build_epoch.to_string()
+    let mut resp = reader.metadata.build_epoch.to_string().into_response();
+    resp.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-store"),
+    );
+    resp
 }
 
 #[tracing_attributes::instrument]
