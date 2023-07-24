@@ -20,7 +20,7 @@ clap = { version = "4.3.11", default-features = false, features = ["std", "deriv
 http = "0.2.9"
 maxminddb = { version = "0.23.0", features = ["mmap"], default-features = false }
 once_cell = { default-features = false, version = "1.18.0" }
-serde = { version = "1.0.164", default-features = false }
+serde = { version = "1.0.174", default-features = false }
 serde_json = { default-features = false, version = "1.0.102" }
 tokio = { version = "1.29.1", features = ["rt-multi-thread", "macros", "signal"], default-features = false }
 tower-http = { version = "0.4.1", features = ["trace"], default-features = false }
