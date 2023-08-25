@@ -23,7 +23,7 @@ once_cell = { default-features = false, version = "1.18.0" }
 serde = { version = "1.0.186", default-features = false }
 serde_json = { default-features = false, version = "1.0.105" }
 tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros", "signal"], default-features = false }
-tower-http = { version = "0.4.1", features = ["trace"], default-features = false }
+tower-http = { version = "0.4.3", features = ["trace"], default-features = false }
 tracing = { default-features = false, version = "0.1.37" }
 tracing-attributes = "0.1.26"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "ansi", "smallvec"], default-features = false }
