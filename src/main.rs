@@ -5,18 +5,22 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum_client_ip::InsecureClientIp;
 use clap::Parser;
+use ip2location::DB;
+use ip2location::Record;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 type SharedReader = Arc<RwLock<Reader<Mmap>>>;
+type SharedReaderIp2location = Arc<Mutex<ip2location::DB>>;
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -24,8 +28,8 @@ struct Config {
     #[arg(short, long, default_value = "[::]:3000")]
     listen: SocketAddr,
 
-    /// The location of the GeoLite2 database
-    #[arg(short, long, default_value = "GeoLite2-City.mmdb")]
+    /// The location of the GeoLite2 or IP2Location LITE database
+    #[arg(short, long)]
     db: PathBuf,
 
     /// Minimum time before db reloads at /db/reload
@@ -35,6 +39,10 @@ struct Config {
     /// Disable DB reloading at runtime
     #[arg(long)]
     disable_db_reloading: bool,
+
+    /// Use IP2Location or Maxmind database
+    #[arg(short, long)]
+    mode: String,
 }
 
 enum IpOrigin {
@@ -92,6 +100,68 @@ async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoRespon
             }
         },
     }
+}
+
+async fn lookup(reader: SharedReaderIp2location, ip: IpOrigin) -> Result<impl IntoResponse, StatusCode> {
+    let record2 = &reader.lock().await.ip_lookup(ip.to_string().parse().unwrap());
+
+    let _span = info_span!("lookup", ip = %ip.to_string()).entered();
+
+    match record2 {
+        Ok(record) => {
+            debug!("IP in database");
+            let record1 = if let Record::LocationDb(rec) = record {
+                Some(rec)
+            } else {
+                None
+            };
+            let record3 = record1.unwrap();
+            let city_json = record3.to_json();
+            Response::builder()
+                .header("Content-Type", "application/json")
+                .header(http::header::CACHE_CONTROL, ip.cache_control())
+                .body(city_json)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        }
+        Err(err) => match err {
+            ip2location::error::Error::IoError(_) => {
+                error!("{:?}", err);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            ip2location::error::Error::GenericError(_) => {
+                error!("{:?}", err);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            ip2location::error::Error::RecordNotFound => {
+                error!("{:?}", err);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            ip2location::error::Error::UnknownDb => {
+                error!("{:?}", err);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            ip2location::error::Error::InvalidBinDatabase(_, _) => {
+                error!("{:?}", err);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        },
+    }
+}
+
+#[axum_macros::debug_handler]
+async fn get_geolocation_with_client_ip(
+    InsecureClientIp(insecure_client_ip): InsecureClientIp,
+    Extension(reader): Extension<SharedReaderIp2location>,
+) -> impl IntoResponse {
+    // We use the insecure one to get X-Forwarded-For, etc
+    lookup(reader, IpOrigin::Inferred(insecure_client_ip)).await
+}
+
+async fn get_geolocation_with_explicit_ip(
+    Extension(reader): Extension<SharedReaderIp2location>,
+    Path(ip): Path<IpAddr>,
+) -> impl IntoResponse {
+    lookup(reader, IpOrigin::UserProvided(ip)).await
 }
 
 async fn get_geoip_with_client_ip(
@@ -248,16 +318,37 @@ async fn main() -> Result<(), anyhow::Error> {
     let _span = info_span!("main").entered();
 
     let cfg = Arc::new(Config::parse());
-    let reader = Reader::open_mmap(&cfg.db)?;
-    if reader.metadata.database_type != "GeoLite2-City" {
-        anyhow::bail!("Invalid database type: {}", reader.metadata.database_type);
-    }
-    let reader = Arc::new(RwLock::new(reader));
+    let _ = if &cfg.mode == "ip2location" {
+        let db_mmap = DB::from_file_mmap(&cfg.db)?;
+        let reader = Arc::new(Mutex::new(db_mmap));
 
-    let tcp = TcpListener::bind(cfg.listen)?;
-    info!("Listening on {}", cfg.listen);
+        let tcp = TcpListener::bind(cfg.listen)?;
+        info!("Listening on {}", cfg.listen);
+        
+        let app = axum::Router::new()
+            .route("/", get(get_geolocation_with_client_ip))
+            .route("/:ip", get(get_geolocation_with_explicit_ip))
+            // .route("/db/reload", get(db_reload))
+            // .route("/db/epoch", get(db_epoch))
+            .layer(Extension(reader))
+            .layer(Extension(cfg))
+            .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
 
-    let app = axum::Router::new()
+        Ok::<(), ip2location::error::Error>(axum::Server::from_tcp(tcp)?
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .with_graceful_shutdown(wait_for_shutdown_request())
+            .await?)
+    } else if &cfg.mode == "maxmind" {
+        let reader = Reader::open_mmap(&cfg.db)?;
+        if reader.metadata.database_type != "GeoLite2-City" {
+            anyhow::bail!("Invalid database type: {}", reader.metadata.database_type);
+        }
+        let reader = Arc::new(RwLock::new(reader));
+        
+        let tcp = TcpListener::bind(cfg.listen)?;
+        info!("Listening on {}", cfg.listen);
+        
+        let app = axum::Router::new()
         .route("/", get(get_geoip_with_client_ip))
         .route("/:ip", get(get_geoip_with_explicit_ip))
         .route("/db/reload", get(db_reload))
@@ -265,9 +356,14 @@ async fn main() -> Result<(), anyhow::Error> {
         .layer(Extension(reader))
         .layer(Extension(cfg))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
-
-    Ok(axum::Server::from_tcp(tcp)?
+        
+        Ok(axum::Server::from_tcp(tcp)?
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(wait_for_shutdown_request())
         .await?)
+    } else {
+		anyhow::bail!("Invalid mode value, only ip2location or maxmind is accepted.");
+	};
+    
+    Ok(())
 }

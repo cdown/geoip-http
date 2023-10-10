@@ -7,7 +7,7 @@ possible server for [tzupdate](https://github.com/cdown/tzupdate).
 ## Features
 
 - Fast, uses Axum web framework
-- Simple, less than 300 lines of code
+- Simple, less than 400 lines of code
 - Safe hot reload of GeoIP DB without restarting
 - Correct cache behaviour for implicit/explicit IP lookup
 - Direct dump of GeoIP data: no filtering
@@ -17,18 +17,18 @@ possible server for [tzupdate](https://github.com/cdown/tzupdate).
 
 ## Usage
 
-Download GeoLite2-City.mmdb from
-[here](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/), and
-extract it.
+Just download the binary from the release to your server. geoip-http requires GeoLite2-City.mmdb or IP2Location LITE database to perform. You can download and extract it from:
+
+- <https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/> for GeoLite2-City.mmdb, or
+- <https://lite.ip2location.com/ip2location-lite> for IP2Location LITE database.
 
 By default, the server runs on TCP 0.0.0.0:3000. You can change this with the
-`--ip` and `--port` options. You can also set the GeoIP database file location
-with the `--db` option.
+`--ip` and `--port` options. You will also be required to set the ``--mode`` option. The value can be either maxmind or ip2location. You can also set the GeoIP database file location with the `--db` option.
 
 You can then query `/` to get data for the connecting IP (respecting things
 like X-Real-IP, X-Forwarded-For, and the like), or `/8.8.8.8` to get details
 for (for example) 8.8.8.8:
-
+**Maxmind GeoLite2-City Database**
 ```
 % curl --silent http://127.0.0.1:3000/8.8.8.8 | jq '.location'
 {
@@ -41,8 +41,25 @@ for (for example) 8.8.8.8:
 ```
 
 The format matches that of the maxminddb crate's [City
-struct](https://docs.rs/maxminddb/latest/maxminddb/geoip2/struct.City.html),
-represented as JSON by its `Serialize` trait.
+struct](https://docs.rs/maxminddb/latest/maxminddb/geoip2/struct.City.html), represented as JSON by its `Serialize` trait.
+
+**IP2Location LITE Database**
+```
+{
+	"ip": "8.8.8.8",
+	"latitude": 37.40599,
+	"longitude": -122.078514,
+	"country": {
+		"short_name": "US",
+		"long_name": "United States of America"
+	},
+	"region": "California",
+	"city": "Mountain View",
+	"zip_code": "94043",
+	"time_zone": "-07:00"
+}
+```
+The fields outputted will be vary based on the type of the LITE database used. The example above used LITE DB11(https://lite.ip2location.com/database/db11-ip-country-region-city-latitude-longitude-zipcode-timezone).
 
 ## Logging
 
@@ -125,12 +142,12 @@ Fill in `--db`.
 
 ```
 [Service]
-ExecStart=/usr/bin/geoip-http --db ...
+ExecStart=/usr/bin/geoip-http --db ... --mode ...
 ExecReload=/usr/bin/curl -v http://127.0.0.1:3000/reload/geoip
 Restart=always
 ```
 
 ## Attribution
 
-This product is designed to use GeoLite2 data created by MaxMind, available
-from https://maxmind.com.
+This product is designed to use GeoLite2 data created by MaxMind which available
+from https://maxmind.com, and IP2Location LITE database which available from https://lite.ip2location.com/.
