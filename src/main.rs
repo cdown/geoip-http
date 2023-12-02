@@ -3,16 +3,16 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum_client_ip::InsecureClientIp;
+use axum_client_ip::{InsecureClientIp, SecureClientIpSource};
 use clap::Parser;
 use maxminddb::{MaxMindDBError, Mmap, Reader};
 use once_cell::sync::OnceCell;
-use std::net::{IpAddr, SocketAddr, TcpListener};
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::signal;
+use tokio::net::TcpListener;
 use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -77,7 +77,7 @@ async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoRespon
             // geoip2::City contains values borrowed from reader, so we must render it right away
             Response::builder()
                 .header("Content-Type", "application/json")
-                .header(http::header::CACHE_CONTROL, ip.cache_control())
+                .header(axum::http::header::CACHE_CONTROL, ip.cache_control())
                 .body(city_json.to_string())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -136,8 +136,8 @@ impl IntoResponse for ReloadStatus {
         };
         let mut resp = resp.into_response();
         resp.headers_mut().insert(
-            http::header::CACHE_CONTROL,
-            http::HeaderValue::from_static("no-store"),
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
         );
         resp
     }
@@ -197,36 +197,13 @@ async fn db_epoch(Extension(reader): Extension<SharedReader>) -> impl IntoRespon
     let reader = reader.read().await;
     let mut resp = reader.metadata.build_epoch.to_string().into_response();
     resp.headers_mut().insert(
-        http::header::CACHE_CONTROL,
-        http::HeaderValue::from_static("no-store"),
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
     );
     resp
 }
 
-#[tracing_attributes::instrument]
-async fn wait_for_shutdown_request() {
-    let ctrl_c = async { signal::ctrl_c().await.unwrap() };
-
-    #[cfg(unix)]
-    let sigterm = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let sigterm = std::future::pending::<()>(); // unimplemented elsewhere
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = sigterm => {},
-    }
-
-    info!("shutdown request received, shutting down");
-}
-
-fn request_span(req: &http::Request<axum::body::Body>) -> tracing::Span {
+fn request_span(req: &axum::http::Request<axum::body::Body>) -> tracing::Span {
     static SEQ: AtomicUsize = AtomicUsize::new(0);
     info_span!(
         "req",
@@ -254,7 +231,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     let reader = Arc::new(RwLock::new(reader));
 
-    let tcp = TcpListener::bind(cfg.listen)?;
+    let listener = TcpListener::bind(cfg.listen).await?;
     info!("Listening on {}", cfg.listen);
 
     let app = axum::Router::new()
@@ -264,10 +241,16 @@ async fn main() -> Result<(), anyhow::Error> {
         .route("/db/epoch", get(db_epoch))
         .layer(Extension(reader))
         .layer(Extension(cfg))
+        .layer(SecureClientIpSource::ConnectInfo.into_extension())
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
 
-    Ok(axum::Server::from_tcp(tcp)?
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(wait_for_shutdown_request())
-        .await?)
+    // TODO: Readd graceful shutdown once it doesn't require so much boilerplate after axum
+    // 0.7/hyper 1.0
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
+
+    Ok(())
 }
