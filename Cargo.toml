@@ -9,21 +9,21 @@ readme = "README.md"
 keywords = ["geoip", "maxmind", "geolocation"]
 categories = ["web-programming::http-server"]
 license = "MIT"
-rust-version = "1.65.0"
+rust-version = "1.74"
 
 [dependencies]
 anyhow = "1.0.91"
 async-rwlock = "1.3.0"
-axum = { features = ["json"], default-features = false, version = "0.7.1" }
-axum-client-ip = "0.5.1"
-clap = { version = "4.3.24", default-features = false, features = ["std", "derive"] }
+axum = { features = ["json"], default-features = false, version = "0.7.7" }
+axum-client-ip = "0.6.1"
+clap = { version = "4.5.20", default-features = false, features = ["std", "derive"] }
 http = { default-features = false, version = "1.1.0" }
-maxminddb = { version = "0.23.0", features = ["mmap"], default-features = false }
+maxminddb = { version = "0.24.0", features = ["mmap"], default-features = false }
 once_cell = { default-features = false, version = "1.20.2" }
 serde = { version = "1.0.213", default-features = false }
 serde_json = { default-features = false, version = "1.0.132" }
-tokio = { version = "1.38.1", features = ["rt-multi-thread", "macros"], default-features = false }
-tower-http = { version = "0.5.0", features = ["trace"], default-features = false }
+tokio = { version = "1.41.0", features = ["rt-multi-thread", "macros"], default-features = false }
+tower-http = { version = "0.6.1", features = ["trace"], default-features = false }
 tracing = { default-features = false, version = "0.1.40" }
 tracing-attributes = "0.1.27"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "ansi", "smallvec"], default-features = false }
