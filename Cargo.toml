@@ -22,7 +22,7 @@ maxminddb = { version = "0.24.0", features = ["mmap"], default-features = false 
 once_cell = { default-features = false, version = "1.20.2" }
 serde = { version = "1.0.214", default-features = false }
 serde_json = { default-features = false, version = "1.0.132" }
-tokio = { version = "1.41.0", features = ["rt-multi-thread", "macros"], default-features = false }
+tokio = { version = "1.41.1", features = ["rt-multi-thread", "macros"], default-features = false }
 tower-http = { version = "0.6.1", features = ["trace"], default-features = false }
 tracing = { default-features = false, version = "0.1.40" }
 tracing-attributes = "0.1.27"
