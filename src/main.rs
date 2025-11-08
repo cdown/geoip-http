@@ -1,11 +1,10 @@
 use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
-use axum::extract::{Extension, Path};
+use axum::extract::{ConnectInfo, Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum_client_ip::{InsecureClientIp, SecureClientIpSource};
 use clap::Parser;
-use maxminddb::{MaxMindDBError, Mmap, Reader};
+use maxminddb::{Mmap, Reader};
 use once_cell::sync::OnceCell;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -17,6 +16,49 @@ use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 type SharedReader = Arc<RwLock<Reader<Mmap>>>;
+
+/// This is only used for geolocation since it can be tampered with by the client
+struct InsecureClientIp(IpAddr);
+
+impl<S> axum::extract::FromRequestParts<S> for InsecureClientIp
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let header_ip = parts
+            .headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|s| s.split(',').next()) // The first IP is likely the origin
+            .and_then(|s| s.trim().parse::<IpAddr>().ok())
+            .or_else(|| {
+                parts
+                    .headers
+                    .get("x-real-ip")
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|s| s.trim().parse::<IpAddr>().ok())
+            });
+
+        if let Some(ip) = header_ip {
+            Ok(InsecureClientIp(ip))
+        } else {
+            let ConnectInfo(addr) = ConnectInfo::<SocketAddr>::from_request_parts(parts, state)
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to extract ConnectInfo",
+                    )
+                })?;
+            Ok(InsecureClientIp(addr.ip()))
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 struct Config {
@@ -67,7 +109,7 @@ async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoRespon
     let _span = info_span!("get_geoip", ip = %ip.to_string()).entered();
 
     match reader.lookup::<maxminddb::geoip2::City>(*ip) {
-        Ok(city) => {
+        Ok(Some(city)) => {
             debug!("IP in database");
             let mut city_json = serde_json::json!(city);
             if let Some(obj) = city_json.as_object_mut() {
@@ -81,16 +123,14 @@ async fn get_geoip(reader: SharedReader, ip: IpOrigin) -> Result<impl IntoRespon
                 .body(city_json.to_string())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         }
-        Err(err) => match err {
-            MaxMindDBError::AddressNotFoundError(_) => {
-                debug!("IP not in database");
-                Err(StatusCode::NO_CONTENT)
-            }
-            ref e => {
-                error!("IP lookup error: {e}");
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        },
+        Ok(None) => {
+            debug!("IP not in database");
+            Err(StatusCode::NO_CONTENT)
+        }
+        Err(ref e) => {
+            error!("IP lookup error: {e}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
@@ -236,12 +276,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app = axum::Router::new()
         .route("/", get(get_geoip_with_client_ip))
-        .route("/:ip", get(get_geoip_with_explicit_ip))
+        .route("/{ip}", get(get_geoip_with_explicit_ip))
         .route("/db/reload", get(db_reload))
         .route("/db/epoch", get(db_epoch))
         .layer(Extension(reader))
         .layer(Extension(cfg))
-        .layer(SecureClientIpSource::ConnectInfo.into_extension())
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
 
     // TODO: Readd graceful shutdown once it doesn't require so much boilerplate after axum

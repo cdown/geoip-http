@@ -9,21 +9,20 @@ readme = "README.md"
 keywords = ["geoip", "maxmind", "geolocation"]
 categories = ["web-programming::http-server"]
 license = "MIT"
-rust-version = "1.74"
+rust-version = "1.82"
 
 [dependencies]
-anyhow = "1.0.93"
-async-rwlock = "1.3.0"
-axum = { features = ["json"], default-features = false, version = "0.7.9" }
-axum-client-ip = "0.6.1"
-clap = { version = "4.5.21", default-features = false, features = ["std", "derive"] }
-http = { default-features = false, version = "1.1.0" }
-maxminddb = { version = "0.24.0", features = ["mmap"], default-features = false }
-once_cell = { default-features = false, version = "1.20.2" }
-serde = { version = "1.0.215", default-features = false }
-serde_json = { default-features = false, version = "1.0.133" }
-tokio = { version = "1.41.1", features = ["rt-multi-thread", "macros"], default-features = false }
-tower-http = { version = "0.6.2", features = ["trace"], default-features = false }
-tracing = { default-features = false, version = "0.1.40" }
-tracing-attributes = "0.1.27"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "ansi", "smallvec"], default-features = false }
+anyhow = "1.0.100"
+async-rwlock = "1.3.1"
+axum = { features = ["json", "tokio", "http1", "http2"], default-features = false, version = "0.8.6" }
+clap = { version = "4.5.51", default-features = false, features = ["std", "derive"] }
+http = { default-features = false, version = "1.3.1" }
+maxminddb = { version = "0.26.0", features = ["mmap"], default-features = false }
+once_cell = { default-features = false, version = "1.21.3" }
+serde = { version = "1.0.228", default-features = false }
+serde_json = { default-features = false, version = "1.0.145" }
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros"], default-features = false }
+tower-http = { version = "0.6.6", features = ["trace"], default-features = false }
+tracing = { default-features = false, version = "0.1.41" }
+tracing-attributes = "0.1.30"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "ansi", "smallvec"], default-features = false }
