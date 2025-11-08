@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
+use tokio::signal;
 use tracing::{debug, error, info, info_span};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
@@ -253,6 +254,33 @@ fn request_span(req: &axum::http::Request<axum::body::Body>) -> tracing::Span {
     )
 }
 
+#[tracing_attributes::instrument]
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("shutdown signal received, shutting down gracefully");
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let filter = EnvFilter::builder()
@@ -283,12 +311,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .layer(Extension(cfg))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(request_span));
 
-    // TODO: Readd graceful shutdown once it doesn't require so much boilerplate after axum
-    // 0.7/hyper 1.0
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
 
     Ok(())
